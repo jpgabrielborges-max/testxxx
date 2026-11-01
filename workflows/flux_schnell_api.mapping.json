@@ -1,0 +1,12 @@
+{
+  "description": "FLUX.1 schnell (checkpoint fp8 unico) via CheckpointLoaderSimple. Mapeado por TITULO do no.",
+  "required": ["positive_prompt", "seed", "width", "height", "filename_prefix"],
+  "roles": {
+    "positive_prompt": {"title": "WIF Positive Prompt", "input": "text"},
+    "seed": {"title": "WIF Sampler", "input": "seed"},
+    "steps": {"title": "WIF Sampler", "input": "steps"},
+    "width": {"title": "WIF Latent", "input": "width"},
+    "height": {"title": "WIF Latent", "input": "height"},
+    "filename_prefix": {"title": "WIF Save Image", "input": "filename_prefix"}
+  }
+}

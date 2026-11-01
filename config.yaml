@@ -1,0 +1,101 @@
+# What If Local Studio - configuracao principal.
+# Valores de host/modelo tambem podem ser sobrescritos pelo arquivo .env (veja .env.example).
+
+paths:
+  projects_dir: projects
+  outputs_dir: outputs
+  models_dir: models
+
+ollama:
+  host: http://127.0.0.1:11434
+  # Modelo local para roteiro em portugues com JSON estruturado. Troque se preferir outro
+  # (ex.: qwen3:14b, gemma3:12b). Rode "ollama pull <modelo>" antes.
+  model: qwen2.5:14b
+  temperature: 0.8
+  num_ctx: 8192
+  timeout_s: 900
+  max_retries: 2          # novas tentativas se o JSON ou o numero de palavras vier fora do esperado
+  think: null             # null = nao envia o parametro. Use false para modelos com "thinking" (ex.: qwen3)
+  unload_after_use: true  # descarrega o modelo da VRAM ao terminar o roteiro, para liberar espaco ao ComfyUI
+
+comfyui:
+  host: http://127.0.0.1:8188
+  poll_interval_s: 1.0
+  timeout_image_s: 300
+  timeout_video_s: 2400
+  free_memory_between_stages: true
+  workflows:
+    image: workflows/flux_schnell_api.json
+    video: workflows/wan22_ti2v_5b_api.json
+  # O mapeamento de nos fica ao lado de cada workflow (*.mapping.json) e usa o TITULO do no,
+  # nunca IDs fixos. Veja workflows/README.md.
+
+image:
+  width: 768
+  height: 1344            # 9:16, multiplos de 16
+  steps: 4                # FLUX.1 schnell foi feito para ~4 passos
+
+animation:
+  width: 704
+  height: 1280            # multiplos de 32 (exigencia do VAE do Wan 2.2)
+  length: 49              # frames; precisa ser 4n+1 (49 = ~2 s a 24 fps)
+  fps: 24
+  steps: 20
+  max_scenes_per_episode: 4   # modo completo anima so as cenas selecionadas (as primeiras por padrao)
+
+tts:
+  backend: kokoro         # kokoro | piper | chatterbox
+  voice: pf_dora
+  speed: 1.0
+  max_speed: 1.15         # limite do ajuste automatico para caber na duracao pedida
+  scene_pad_s: 0.35       # respiro depois de cada cena
+  last_pad_s: 0.9
+  kokoro:
+    model: models/kokoro/kokoro-v1.0.onnx
+    voices: models/kokoro/voices-v1.0.bin
+    lang: pt-br
+  piper:
+    executable: piper     # caminho do piper.exe, se nao estiver no PATH
+    model: models/piper/pt_BR-faber-medium.onnx
+  chatterbox:
+    python: ""            # python do ambiente separado do Chatterbox (veja README)
+    reference_wav: ""     # opcional, voz de referencia (use apenas voz que voce tem direito de usar)
+
+narration:
+  words_per_second: 2.5   # calibra o orcamento de palavras do roteiro
+  tolerance: 0.2          # +-20% de palavras aceitos antes de pedir nova tentativa ao LLM
+
+align:
+  backend: auto           # auto | whisper | proportional
+  whisper_model: small    # multilingue (nao use *.en)
+  device: auto
+  compute_type: auto
+
+subtitles:
+  font: Arial
+  font_size: 78
+  bold: true
+  primary_color: "#FFD60A"    # cor da palavra falada (destaque)
+  secondary_color: "#FFFFFF"  # cor das demais palavras
+  outline_color: "#000000"
+  outline: 5
+  shadow: 2
+  margin_bottom: 380          # distancia da borda inferior (px do video 1080x1920)
+  max_words_per_chunk: 4
+  max_chars_per_line: 18
+  uppercase: false
+
+render:
+  width: 1080
+  height: 1920
+  fps: 30
+  transition: fade        # fade | fadeblack | none
+  transition_s: 0.18
+  encoder: libx264        # libx264 | h264_nvenc
+  preset: veryfast
+  crf: 19
+  audio_bitrate: 192k
+  camera_zoom: 0.16       # intensidade do zoom/pan (0.10 a 0.25)
+  music_file: ""          # opcional: trilha livre de direitos
+  music_volume: 0.10
+  sfx_volume: 0.35

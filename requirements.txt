@@ -1,0 +1,14 @@
+# Ambiente do APLICATIVO (ComfyUI e Chatterbox ficam em ambientes separados, veja README)
+streamlit>=1.40
+pydantic>=2.6
+pyyaml>=6.0
+requests>=2.31
+pillow>=10.0
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12
+python-dotenv>=1.0
+num2words>=0.5.13
+kokoro-onnx>=0.4
+faster-whisper>=1.0
+pytest>=8.0
