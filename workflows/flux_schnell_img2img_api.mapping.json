@@ -1,0 +1,12 @@
+{
+  "description": "FLUX schnell img2img (continuidade entre cenas). Derivado do template oficial flux_schnell: LoadImage + VAEEncode no lugar do latente vazio. EXPERIMENTAL.",
+  "required": ["positive_prompt", "seed", "filename_prefix", "reference_image", "denoise"],
+  "roles": {
+    "positive_prompt": {"title": "WIF Positive Prompt", "input": "text"},
+    "seed": {"title": "WIF Sampler", "input": "seed"},
+    "steps": {"title": "WIF Sampler", "input": "steps"},
+    "denoise": {"title": "WIF Sampler", "input": "denoise"},
+    "reference_image": {"title": "WIF Reference Image", "input": "image"},
+    "filename_prefix": {"title": "WIF Save Image", "input": "filename_prefix"}
+  }
+}

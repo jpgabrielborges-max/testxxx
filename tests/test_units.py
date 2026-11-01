@@ -11,6 +11,11 @@ from wifstudio.textnorm import count_words, normalize_pt
 from fake_servers import OBJECT_INFO
 
 
+def nid(wf, title):
+    """id do nó pelo TÍTULO (os ids vêm do template oficial e não devem ser usados no código)."""
+    return resolve_node(wf, {"title": title})
+
+
 def test_normalize_numbers_pt():
     assert normalize_pt("Em 5 segundos") == "Em cinco segundos"
     assert normalize_pt("a 1.000 km/h") == "a mil quilômetros por hora"
@@ -19,36 +24,48 @@ def test_normalize_numbers_pt():
     assert count_words("um dois, três!") == 3
 
 
+def test_settings_validation_by_source():
+    with pytest.raises(Exception, match="Cole o seu roteiro"):
+        Settings(source="roteiro", script_text="oi")
+    with pytest.raises(Exception, match="ideia"):
+        Settings(source="ideia", hypothesis="")
+    with pytest.raises(Exception, match="estilo personalizado"):
+        Settings(hypothesis="E se algo", visual_style="personalizado")
+    assert Settings(source="roteiro", script_text="um dois três quatro").source == "roteiro"
+
+
 def test_slugify_and_settings():
     assert slugify("E se todos os humanos desaparecessem?") == "e-se-todos-os-humanos-desaparecessem"
     with pytest.raises(Exception):
-        Settings(hypothesis="x", duration_s=20)  # só 30, 45 ou 60
+        Settings(hypothesis="E se algo", duration_s=20)  # só 30, 45 ou 60
 
 
 def test_workflow_mapping_by_title(cfg):
     wf, mp = load_workflow(cfg.path("comfyui.workflows.image"))
     out = patch_workflow(wf, mp, {"positive_prompt": "um gato", "seed": 9, "width": 512, "height": 512,
                                   "filename_prefix": "x/y", "steps": 2})
-    assert out["2"]["inputs"]["text"] == "um gato" and out["5"]["inputs"]["seed"] == 9
-    assert out["4"]["inputs"]["width"] == 512 and out["5"]["inputs"]["steps"] == 2
-    assert wf["2"]["inputs"]["text"] == "PLACEHOLDER"  # original intacto
+    pos, ks, lat = nid(out, "WIF Positive Prompt"), nid(out, "WIF Sampler"), nid(out, "WIF Latent")
+    assert out[pos]["inputs"]["text"] == "um gato" and out[ks]["inputs"]["seed"] == 9
+    assert out[lat]["inputs"]["width"] == 512 and out[ks]["inputs"]["steps"] == 2
+    assert wf[pos]["inputs"]["text"] == "PLACEHOLDER"  # original intacto
 
 
 def test_mapping_is_not_tied_to_ids(cfg):
     """Troca os IDs dos nós: o mapeamento por título continua funcionando."""
     wf, mp = load_workflow(cfg.path("comfyui.workflows.image"))
+    pos_old = nid(wf, "WIF Positive Prompt")
     ids = {old: f"n{900 - int(old)}" for old in wf}
     re = {ids[o]: {**n, "inputs": {k: ([ids[v[0]], v[1]] if isinstance(v, list) else v) for k, v in n["inputs"].items()}}
           for o, n in wf.items()}
     out = patch_workflow(re, mp, {"positive_prompt": "ok", "seed": 1, "width": 64, "height": 64, "filename_prefix": "p"})
-    assert out[ids["2"]]["inputs"]["text"] == "ok"
+    assert out[ids[pos_old]]["inputs"]["text"] == "ok"
 
 
 def test_mapping_errors(cfg):
     wf, mp = load_workflow(cfg.path("comfyui.workflows.image"))
     with pytest.raises(WorkflowMappingError, match="obrigat"):
         patch_workflow(wf, mp, {"seed": 1})
-    wf["99"] = dict(wf["2"])  # dois nós com o mesmo título -> ambíguo, não adivinha
+    wf["99"] = dict(wf[nid(wf, "WIF Positive Prompt")])  # dois nós com o mesmo título -> ambíguo, não adivinha
     with pytest.raises(WorkflowMappingError, match="correspondeu a 2"):
         resolve_node(wf, {"title": "WIF Positive Prompt"})
 
@@ -56,10 +73,10 @@ def test_mapping_errors(cfg):
 def test_validate_against_server_finds_missing_model(cfg):
     wf, _ = load_workflow(cfg.path("comfyui.workflows.image"))
     assert validate_against_server(wf, OBJECT_INFO) == []
-    wf["1"]["inputs"]["ckpt_name"] = "outro.safetensors"
+    wf[nid(wf, "WIF Checkpoint")]["inputs"]["ckpt_name"] = "outro.safetensors"
     probs = validate_against_server(wf, OBJECT_INFO)
     assert any("outro.safetensors" in p for p in probs)
-    wf["7"]["class_type"] = "NoQueExiste"
+    wf[nid(wf, "WIF Save Image")]["class_type"] = "NoQueExiste"
     assert any("NoQueExiste" in p for p in validate_against_server(wf, OBJECT_INFO))
 
 
@@ -70,7 +87,8 @@ def test_comfy_image_roundtrip(cfg, fake_comfy, tmp_path):
     w = patch_workflow(wf, mp, {"positive_prompt": "a red apple", "seed": 3, "width": 768, "height": 1344, "filename_prefix": "t"})
     out = c.run(w, tmp_path / "img", timeout=20)
     assert out.suffix == ".png" and out.stat().st_size > 1000
-    assert fake_comfy.workflows[-1]["2"]["inputs"]["text"] == "a red apple"
+    sent = fake_comfy.workflows[-1]
+    assert sent[nid(sent, "WIF Positive Prompt")]["inputs"]["text"] == "a red apple"
 
 
 def test_comfy_error_and_timeout(cfg, tmp_path):

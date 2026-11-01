@@ -1,6 +1,7 @@
 """Gera um MP4 de demonstração com Ollama e ComfyUI FALSOS (imagens são gradientes de teste, NÃO FLUX).
-Serve para ouvir a voz pt-BR, ver legendas/transições e conferir a montagem sem GPU.
-  python tests/make_demo.py <pasta_saida> [pasta_modelos_kokoro]"""
+Roda o botão único (run_all) com um roteiro de examples/. Serve para ouvir a voz pt-BR, ver legendas/SFX/transições e
+conferir a montagem sem GPU.
+  python tests/make_demo.py <pasta_saida> [pasta_modelos_kokoro] [roteiro.txt]"""
 import shutil, sys, tempfile
 from pathlib import Path
 
@@ -22,15 +23,16 @@ cfg = load_config(tmp, use_env=False, overrides={"ollama": {"host": ol.url}, "co
     "align": {"backend": "proportional"}, "subtitles": {"font": "DejaVu Sans"},
     "tts": {"kokoro": {"model": str(kdir / "kokoro-v1.0.onnx"), "voices": str(kdir / "voices-v1.0.bin")}}})
 st = Studio(cfg)
-p = st.store.create(Settings(hypothesis="E se a gravidade da Terra desaparecesse por 5 segundos?", duration_s=30, episodes=1))
+script = Path(sys.argv[3]) if len(sys.argv) > 3 else ROOT / "examples" / "roteiro_crime.txt"
+p = st.store.create(Settings(source="roteiro", script_text=script.read_text(encoding="utf-8"), visual_style="terror_sombrio"))
 def job(name, fn):
     r = JobRunner(); c = r.start(name, fn); r.wait(900)
     assert c.state.status == "done", (name, c.state.error, c.state.logs[-8:])
-job("roteiro", lambda c: st.stage_script(p, c)); approve(p, st.store)
-job("imagens", lambda c: st.stage_images(p, c)); job("video", lambda c: st.stage_render(p, c))
+job("completo", lambda c: st.run_all(p, c))
+p = st.store.load(p.id)
 mp4 = st.store.abs(p.id, p.episodes[0].final_video)
-shutil.copy(mp4, out / "demo_gravidade_30s_IMAGENS_DE_TESTE.mp4"); shutil.copy(st.store.abs(p.id, p.episodes[0].final_srt), out / "demo.srt")
-rep = verify_reel(mp4, 30)
+shutil.copy(mp4, out / "demo_roteiro_pronto_IMAGENS_DE_TESTE.mp4"); shutil.copy(st.store.abs(p.id, p.episodes[0].final_srt), out / "demo.srt")
+rep = verify_reel(mp4, sum(st.scene_duration(p.episodes[0], x) for x in p.episodes[0].scenes), tol=0.05)
 for c in rep["checks"]: print("OK " if c["ok"] else "FALHA", c["check"], "|", c["detail"])
 print("duracao", rep["duration"], "tamanho_mb", rep["size_mb"], "geral_ok", rep["ok"])
 ol.close(); cf.close()

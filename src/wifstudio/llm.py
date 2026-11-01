@@ -34,8 +34,11 @@ class OllamaClient:
 
     # ---- status ----
     def models(self) -> list[str]:
-        r = requests.get(f"{self.host}/api/tags", timeout=10)
-        r.raise_for_status()
+        try:
+            r = requests.get(f"{self.host}/api/tags", timeout=10)
+            r.raise_for_status()
+        except requests.RequestException as exc:
+            raise LLMError(f"Ollama inacessível em {self.host}. Abra o aplicativo do Ollama (ou rode 'ollama serve'). Detalhe: {type(exc).__name__}") from exc
         return [m["name"] for m in r.json().get("models", [])]
 
     def has_model(self) -> bool:

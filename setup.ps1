@@ -9,7 +9,8 @@
 
 .PARAMETER InstallComfyUI      Clona o ComfyUI em .\ComfyUI com ambiente Python PROPRIO (PyTorch CUDA para RTX 50).
 .PARAMETER ComfyUIPath         Usa uma instalacao do ComfyUI que voce ja tem (nao toca nela, so grava o caminho no .env).
-.PARAMETER TorchIndex          Indice de wheels do PyTorch. Padrao cu128 (primeiro CUDA com suporte a Blackwell/RTX 50).
+.PARAMETER TorchIndex          Indice de wheels do PyTorch. Padrao cu130, o que o README oficial do ComfyUI manda usar em
+                               placas NVIDIA atuais (exige driver 580 ou mais novo). Com driver 570 a 579 use .../whl/cu128.
 .PARAMETER DownloadImageModel  Baixa o FLUX.1 schnell fp8 (~17 GB) para a pasta de modelos do ComfyUI, se ainda nao existir.
 .PARAMETER DownloadWanModels   Baixa os arquivos do Wan 2.2 TI2V 5B (~16 GB no total), se ainda nao existirem.
 .PARAMETER PullOllamaModel     Executa "ollama pull" do modelo configurado (~9 GB).
@@ -24,7 +25,7 @@
 param(
   [switch]$InstallComfyUI,
   [string]$ComfyUIPath = "",
-  [string]$TorchIndex = "https://download.pytorch.org/whl/cu128",
+  [string]$TorchIndex = "https://download.pytorch.org/whl/cu130",
   [switch]$DownloadImageModel,
   [switch]$DownloadWanModels,
   [switch]$PullOllamaModel,
@@ -41,7 +42,7 @@ function Warn($m) { Write-Host "[aviso] $m" -ForegroundColor Yellow }
 function Fail($m) { Write-Host "[ERRO ] $m" -ForegroundColor Red; exit 1 }
 
 function Find-Python {
-  foreach ($cand in @("py -3.12", "py -3.11", "py -3.10", "python")) {
+  foreach ($cand in @("py -3.12", "py -3.13", "py -3.11", "py -3.10", "python")) {
     $parts = $cand -split " "
     $exe = $parts[0]
     $extra = @()
@@ -50,7 +51,7 @@ function Find-Python {
     try {
       $v = (& $exe @extra -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null)
     } catch { continue }
-    if ($v -match "^3\.(10|11|12)$") { return @{ Exe = $exe; Args = $extra; Version = $v } }
+    if ($v -match "^3\.(10|11|12|13)$") { return @{ Exe = $exe; Args = $extra; Version = $v } }
   }
   return $null
 }
@@ -82,11 +83,15 @@ if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
 $gpuLine = (& nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap --format=csv,noheader | Select-Object -First 1)
 $g = $gpuLine -split ",\s*"
 Ok "GPU: $($g[0]) | driver $($g[1]) | VRAM $($g[2]) | compute capability $($g[3])"
-try { if ([version]$g[1] -lt [version]"570.0") { Warn "Driver $($g[1]) e antigo para GPUs RTX 50 (Blackwell). Atualize para 570 ou mais novo." } } catch { }
-if ($g[3] -match "^12") { Ok "Arquitetura Blackwell (sm_120): o PyTorch precisa ser build CUDA 12.8 ou mais novo (o ComfyUI deste setup usa $TorchIndex)." }
+try {
+  $drv = [version]$g[1]
+  if ($drv -lt [version]"570.0") { Warn "Driver $($g[1]) e antigo para GPUs RTX 50 (Blackwell). Atualize para 570 ou mais novo." }
+  elseif ($TorchIndex -match "cu13" -and $drv -lt [version]"580.0") { Warn "Driver $($g[1]) e anterior ao 580, que o PyTorch cu130 exige. Atualize o driver ou rode com -TorchIndex https://download.pytorch.org/whl/cu128" }
+} catch { }
+if ($g[3] -match "^12") { Ok "Arquitetura Blackwell (sm_120): o PyTorch precisa ser build CUDA 12.8 ou mais novo (este setup usa $TorchIndex)." }
 
 $py = Find-Python
-if (-not $py) { Fail "Python 3.10 a 3.12 nao encontrado. Instale: winget install -e --id Python.Python.3.12" }
+if (-not $py) { Fail "Python 3.10 a 3.13 nao encontrado. Instale: winget install -e --id Python.Python.3.12" }
 Ok "Python $($py.Version)"
 
 foreach ($t in @("ffmpeg", "ffprobe")) {
@@ -134,8 +139,55 @@ if (-not $SkipKokoro) {
   Download-File "$base/voices-v1.0.bin" (Join-Path $PSScriptRoot "models\kokoro\voices-v1.0.bin")
 }
 
-# ------------------------------------------------------------------ 4. .env
-if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env"; Ok ".env criado a partir do .env.example" } else { Ok ".env ja existe (mantido)" }
+# ------------------------------------------------------------------ 4. .env e .gitignore (a prova de arquivos com ponto que sumiram)
+# Arquivos que comecam com ponto costumam ser descartados por programas de ZIP, upload e extracao. Por isso o projeto
+# traz copias SEM ponto (env.example, gitignore.template) e este script recria o que faltar, sem sobrescrever nada.
+$DefaultEnv = @"
+# Nunca coloque chaves de API aqui: este projeto nao usa nenhum servico pago.
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:14b
+COMFYUI_HOST=http://127.0.0.1:8188
+COMFYUI_PATH=
+COMFYUI_ARGS=--listen 127.0.0.1 --port 8188
+"@
+$DefaultIgnore = @"
+.venv/
+.env
+ComfyUI/
+chatterbox-env/
+models/**/*.onnx
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.gguf
+projects/*
+!projects/.gitkeep
+outputs/*
+!outputs/.gitkeep
+real_test_output/
+*.mp4
+*.wav
+*.mp3
+*.png
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+"@
+function Ensure-FromTemplate($target, $templates, $fallback, $label) {
+  if (Test-Path $target) { Ok "$target ja existe (mantido)"; return }
+  foreach ($t in $templates) {
+    if (Test-Path $t) { Copy-Item $t $target; Ok "$target criado a partir de $t"; return }
+  }
+  Set-Content -Path $target -Value $fallback -Encoding UTF8
+  Warn "$label : nenhum modelo encontrado ($($templates -join ', ')). Criei $target com o conteudo padrao embutido neste script."
+}
+if (-not (Test-Path ".env.example")) {
+  if (Test-Path "env.example") { Copy-Item "env.example" ".env.example" } else { Set-Content -Path ".env.example" -Value $DefaultEnv -Encoding UTF8 }
+  Ok ".env.example recriado"
+}
+Ensure-FromTemplate ".env" @(".env.example", "env.example") $DefaultEnv ".env"
+Ensure-FromTemplate ".gitignore" @("gitignore.template") $DefaultIgnore ".gitignore"
+foreach ($d in @("projects", "outputs", "models\kokoro", "assets\sfx")) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
 # ------------------------------------------------------------------ 5. ComfyUI
 $comfy = ""
@@ -157,7 +209,7 @@ if ($ComfyUIPath) {
     $cpy = Join-Path $comfy ".venv\Scripts\python.exe"
     & $cpy -m pip install --upgrade pip --quiet
     Say "Instalando PyTorch ($TorchIndex). Sao alguns GB."
-    & $cpy -m pip install torch torchvision torchaudio --index-url $TorchIndex
+    & $cpy -m pip install torch torchvision torchaudio --extra-index-url $TorchIndex
     if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar o PyTorch. Se o indice $TorchIndex mudou, passe -TorchIndex com o indice atual (pytorch.org/get-started)." }
     & $cpy -m pip install -r (Join-Path $comfy "requirements.txt")
     if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar os requisitos do ComfyUI" }

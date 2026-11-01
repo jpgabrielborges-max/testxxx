@@ -91,11 +91,11 @@ def test_requires_approval_and_edits_invalidate(cfg):
     r = JobRunner()
     ctx = r.start("imagens", lambda c: st.stage_images(p, c))
     r.wait(30)
-    assert ctx.state.status == "error" and "Aprove o roteiro" in ctx.state.error
+    assert ctx.state.status == "error" and "Aprove o plano" in ctx.state.error
     sc = p.episodes[0].scenes[1]
     sc.status.update({"image": "done", "audio": "done", "clip": "done"})
     apply_edits(p, {sc.id: {"narration": "Em 5 segundos, nada muda."}}, st.store)
-    assert sc.narration == "Em cinco segundos, nada muda."
+    assert sc.narration == "Em 5 segundos, nada muda." and sc.spoken_text == "Em cinco segundos, nada muda."  # exibe o seu texto, fala por extenso
     assert sc.status["audio"] == "pending" and sc.status["clip"] == "pending" and sc.status["image"] == "done"
     apply_edits(p, {sc.id: {"image_prompt": "novo prompt"}}, st.store)
     assert sc.status["image"] == "pending"
@@ -200,7 +200,7 @@ def test_acceptance_end_to_end_gravity_30s(cfg, fake_comfy):
 @needs_kokoro
 def test_full_mode_with_animation_and_fallback(cfg, fake_comfy):
     st = Studio(cfg)
-    p = new_project(st, duration_s=30, mode="completo")
+    p = new_project(st, duration_s=30, mode="completo", animate_scope="marcadas")
     run_job("roteiro", lambda c: st.stage_script(p, c))
     approve(p, st.store)
     run_job("imagens", lambda c: st.stage_images(p, c))

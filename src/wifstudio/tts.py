@@ -43,8 +43,17 @@ class KokoroBackend:
 
         self._k = Kokoro(str(model), str(voices))
         self.lang = lang
+        self.voices = set(self._k.get_voices())
+
+    def check_voice(self, voice: str) -> None:
+        """Voz inglesa lendo português sai com sotaque e erros (medido: ~66% de erro contra ~9% das vozes pt-BR)."""
+        if voice not in self.voices:
+            raise TTSError(f"Voz '{voice}' não existe no Kokoro. Vozes pt-BR: {', '.join(KOKORO_PT_VOICES)}")
+        if self.lang.lower().startswith("pt") and voice not in KOKORO_PT_VOICES:
+            raise TTSError(f"A voz '{voice}' não é pt-BR e a narração sairia com sotaque estrangeiro. Use: {', '.join(KOKORO_PT_VOICES)}")
 
     def synth(self, text: str, voice: str, speed: float) -> np.ndarray:
+        self.check_voice(voice)
         audio, sr = self._k.create(text, voice=voice, speed=speed, lang=self.lang)
         self.sr = sr
         return np.asarray(audio, dtype=np.float32)

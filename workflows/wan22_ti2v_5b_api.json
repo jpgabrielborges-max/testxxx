@@ -1,14 +1,174 @@
 {
-  "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors", "weight_dtype": "default"}, "_meta": {"title": "WIF Wan UNET"}},
-  "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "device": "default"}, "_meta": {"title": "WIF Wan CLIP"}},
-  "3": {"class_type": "VAELoader", "inputs": {"vae_name": "wan2.2_vae.safetensors"}, "_meta": {"title": "WIF Wan VAE"}},
-  "4": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["1", 0], "shift": 8.0}, "_meta": {"title": "WIF Model Sampling"}},
-  "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "PLACEHOLDER", "clip": ["2", 0]}, "_meta": {"title": "WIF Video Prompt"}},
-  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "blurry, distorted, deformed, flicker, text, watermark, low quality, static image", "clip": ["2", 0]}, "_meta": {"title": "WIF Video Negative"}},
-  "7": {"class_type": "LoadImage", "inputs": {"image": "example.png"}, "_meta": {"title": "WIF Input Image"}},
-  "8": {"class_type": "Wan22ImageToVideoLatent", "inputs": {"vae": ["3", 0], "start_image": ["7", 0], "width": 704, "height": 1280, "length": 49, "batch_size": 1}, "_meta": {"title": "WIF Video Latent"}},
-  "9": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "seed": 1, "steps": 20, "cfg": 5.0, "sampler_name": "uni_pc", "scheduler": "simple", "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["8", 0], "denoise": 1.0}, "_meta": {"title": "WIF Video Sampler"}},
-  "10": {"class_type": "VAEDecode", "inputs": {"samples": ["9", 0], "vae": ["3", 0]}, "_meta": {"title": "WIF Video Decode"}},
-  "11": {"class_type": "CreateVideo", "inputs": {"images": ["10", 0], "fps": 24}, "_meta": {"title": "WIF Create Video"}},
-  "12": {"class_type": "SaveVideo", "inputs": {"video": ["11", 0], "filename_prefix": "wif/video", "format": "auto", "codec": "auto"}, "_meta": {"title": "WIF Save Video"}}
+  "37": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "wan2.2_ti2v_5B_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "WIF Wan UNET"
+    }
+  },
+  "38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "WIF Wan CLIP"
+    }
+  },
+  "39": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan2.2_vae.safetensors"
+    },
+    "_meta": {
+      "title": "WIF Wan VAE"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "WIF Video Decode"
+    }
+  },
+  "57": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "fps": 24
+    },
+    "_meta": {
+      "title": "WIF Create Video"
+    }
+  },
+  "58": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "57",
+        0
+      ],
+      "filename_prefix": "wif/video",
+      "format": "auto",
+      "format.codec": "auto"
+    },
+    "_meta": {
+      "title": "WIF Save Video"
+    }
+  },
+  "55": {
+    "class_type": "Wan22ImageToVideoLatent",
+    "inputs": {
+      "vae": [
+        "39",
+        0
+      ],
+      "width": 704,
+      "height": 1280,
+      "length": 49,
+      "batch_size": 1,
+      "start_image": [
+        "56",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "WIF Video Latent"
+    }
+  },
+  "56": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    },
+    "_meta": {
+      "title": "WIF Input Image"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "WIF Video Negative"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "PLACEHOLDER",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "WIF Video Prompt"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "48",
+        0
+      ],
+      "seed": 1,
+      "steps": 20,
+      "cfg": 5,
+      "sampler_name": "uni_pc",
+      "scheduler": "simple",
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "55",
+        0
+      ],
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "WIF Video Sampler"
+    }
+  },
+  "48": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": [
+        "37",
+        0
+      ],
+      "shift": 8
+    },
+    "_meta": {
+      "title": "WIF Model Sampling"
+    }
+  }
 }

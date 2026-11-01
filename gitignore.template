@@ -1,0 +1,53 @@
+# Copia sem ponto do .gitignore (alguns programas de ZIP/upload descartam arquivos que comecam com ponto).
+# O setup.ps1 recria o .gitignore a partir daqui se ele nao existir.
+
+# ambientes e segredos
+.venv/
+venv/
+chatterbox-env/
+.env
+*.env.local
+
+# instalacoes e modelos pesados (NUNCA subir para o GitHub)
+ComfyUI/
+models/**/*.onnx
+models/**/*.bin
+models/**/*.gguf
+models/**/*.safetensors
+models/**/*.ckpt
+models/**/*.pt
+models/**/*.pth
+*.safetensors
+*.ckpt
+*.gguf
+
+# dados privados e arquivos gerados
+projects/*
+!projects/.gitkeep
+outputs/*
+!outputs/.gitkeep
+real_test_output/
+assets/sfx/*
+!assets/sfx/README.md
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.mp3
+*.flac
+*.png
+!docs/*.png
+*.jpg
+*.log
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# sistema
+.DS_Store
+Thumbs.db

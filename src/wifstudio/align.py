@@ -82,8 +82,26 @@ class Aligner:
         a = cfg.section("align")
         return cls(a.get("backend", "auto"), a.get("whisper_model", "small"), a.get("device", "auto"), a.get("compute_type", "auto"))
 
+    def align_units(self, wav: Path, units: list[tuple[str, str]], speech_duration: float, lead: float = 0.03) -> list[dict]:
+        """units = [(texto exibido, texto falado)]. Os tempos vêm da fala; o texto devolvido é o EXIBIDO (original do usuário)."""
+        spoken_words: list[str] = []
+        owner: list[int] = []
+        for i, (_, sp) in enumerate(units):
+            for w in sp.split():
+                spoken_words.append(w)
+                owner.append(i)
+        timed = self._align_words(wav, spoken_words, speech_duration, lead)
+        out = []
+        for i, (shown, _) in enumerate(units):
+            ts = [t for t, o in zip(timed, owner) if o == i]
+            if ts:
+                out.append({"w": shown, "s": ts[0]["s"], "e": ts[-1]["e"]})
+        return out
+
     def align(self, wav: Path, text: str, speech_duration: float, lead: float = 0.03) -> list[dict]:
-        words = script_words(text)
+        return self._align_words(wav, script_words(text), speech_duration, lead)
+
+    def _align_words(self, wav: Path, words: list[str], speech_duration: float, lead: float = 0.03) -> list[dict]:
         if not words:
             return []
         if self._model is not None:

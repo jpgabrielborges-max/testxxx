@@ -1,0 +1,121 @@
+{
+  "33": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": [
+        "30",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "WIF Negative Prompt"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "31",
+        0
+      ],
+      "vae": [
+        "30",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "WIF Decode"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "wif/test"
+    },
+    "_meta": {
+      "title": "WIF Save Image"
+    }
+  },
+  "31": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "30",
+        0
+      ],
+      "seed": 1,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "33",
+        0
+      ],
+      "latent_image": [
+        "35",
+        0
+      ],
+      "denoise": 0.72
+    },
+    "_meta": {
+      "title": "WIF Sampler"
+    }
+  },
+  "30": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "flux1-schnell-fp8.safetensors"
+    },
+    "_meta": {
+      "title": "WIF Checkpoint"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "PLACEHOLDER",
+      "clip": [
+        "30",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "WIF Positive Prompt"
+    }
+  },
+  "34": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    },
+    "_meta": {
+      "title": "WIF Reference Image"
+    }
+  },
+  "35": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "34",
+        0
+      ],
+      "vae": [
+        "30",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "WIF Encode"
+    }
+  }
+}

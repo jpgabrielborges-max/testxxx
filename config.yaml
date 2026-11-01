@@ -26,6 +26,7 @@ comfyui:
   free_memory_between_stages: true
   workflows:
     image: workflows/flux_schnell_api.json
+    image_chain: workflows/flux_schnell_img2img_api.json   # só usado com consistency.chain_img2img
     video: workflows/wan22_ti2v_5b_api.json
   # O mapeamento de nos fica ao lado de cada workflow (*.mapping.json) e usa o TITULO do no,
   # nunca IDs fixos. Veja workflows/README.md.
@@ -38,10 +39,21 @@ image:
 animation:
   width: 704
   height: 1280            # multiplos de 32 (exigencia do VAE do Wan 2.2)
-  length: 49              # frames; precisa ser 4n+1 (49 = ~2 s a 24 fps)
+  length: 49              # frames usados quando fit_to_scene esta desligado; precisa ser 4n+1 (49 = ~2 s a 24 fps)
+  fit_to_scene: true      # o tamanho da animacao acompanha a duracao da narracao da cena (4n+1, entre min e max)
+  min_length: 25
+  max_length: 73          # 73 quadros = ~3 s. Suba (97, 121) so depois de medir VRAM e tempo na sua GPU
   fps: 24
   steps: 20
-  max_scenes_per_episode: 4   # modo completo anima so as cenas selecionadas (as primeiras por padrao)
+
+script:                   # divisao do ROTEIRO DO USUARIO em cenas (feita em codigo, sem LLM, sem alterar o texto)
+  min_scene_s: 3.0
+  max_scene_s: 7.5
+
+consistency:              # consistencia visual (nao ha garantia de perfeicao)
+  share_seed_by_location: false   # cenas do mesmo cenario usam a mesma semente base (composicao/cores parecidas)
+  chain_img2img: false            # EXPERIMENTAL: gera a cena a partir da imagem da cena anterior (mesmo cenario e personagem)
+  chain_denoise: 0.72             # 0.5 = muito parecida, 0.9 = quase livre
 
 tts:
   backend: kokoro         # kokoro | piper | chatterbox
@@ -68,8 +80,8 @@ narration:
 align:
   backend: auto           # auto | whisper | proportional
   whisper_model: small    # multilingue (nao use *.en)
-  device: auto
-  compute_type: auto
+  device: cpu             # CPU de proposito: poupa a VRAM do ComfyUI e evita depender de CUDA no faster-whisper (i7-14700KF aguenta)
+  compute_type: int8
 
 subtitles:
   font: Arial
@@ -96,6 +108,8 @@ render:
   crf: 19
   audio_bitrate: 192k
   camera_zoom: 0.16       # intensidade do zoom/pan (0.10 a 0.25)
-  music_file: ""          # opcional: trilha livre de direitos
+  music_file: ""          # opcional: trilha livre de direitos (tem prioridade sobre o colchao automatico)
   music_volume: 0.10
-  sfx_volume: 0.35
+  auto_bed: true          # colchao harmonico procedural discreto conforme o tom (gratuito, sem arquivos)
+  bed_volume: 0.07
+  sfx_volume: 0.35        # efeitos: procedurais; coloque wav/mp3 CC0 em assets/sfx/<nome>*.wav para substituir

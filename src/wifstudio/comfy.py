@@ -96,9 +96,12 @@ def validate_against_server(workflow: dict, object_info: dict) -> list[str]:
             if isinstance(val, list):  # ligação para outro nó
                 continue
             spec = specs.get(name)
-            if spec and isinstance(spec[0], list) and val not in spec[0]:
+            if not spec:
+                continue
+            opts = spec[0] if isinstance(spec[0], list) else (spec[1].get("options") if spec[0] == "COMBO" and len(spec) > 1 else None)
+            if opts is not None and val not in opts:
                 problems.append(f"nó {nid} ({ct}): '{name}' = {val!r} não está entre as opções instaladas "
-                                f"{spec[0][:6]}{'...' if len(spec[0]) > 6 else ''}")
+                                f"{opts[:6]}{'...' if len(opts) > 6 else ''}")
     return problems
 
 

@@ -1,146 +1,159 @@
 # What If Local Studio
 
-Gerador local de vídeos verticais "E se...?" para Instagram Reels. Você digita uma hipótese, o programa escreve o roteiro em português, gera as imagens, narra, legenda e entrega um MP4 1080x1920. Tudo roda no seu PC, sem API paga.
+Content Machine local e gratuita para vídeos verticais (Instagram Reels). Você cola um **roteiro pronto** (de qualquer gênero: zumbi, POV, animais, crime, documentário, ficção, "E se...?") ou digita uma **ideia**, clica em **Gerar vídeo completo** e o programa faz o resto:
 
-Fluxo: **Ollama** (roteiro em JSON) → **ComfyUI + FLUX.1 schnell** (imagens) → **Wan 2.2 TI2V 5B** (animação opcional) → **Kokoro** (narração pt-BR) → **faster-whisper** (tempo das palavras) → **FFmpeg** (câmera, transições, legendas, mix, export).
+roteiro → interpretação → cenas → imagens → animação → narração em pt-BR → efeitos sonoros → legendas sincronizadas → edição → MP4.
 
-## O que já foi testado e o que ainda não foi
+Tudo roda no seu PC, sem API paga e sem créditos: **Ollama** (interpretação), **ComfyUI + FLUX.1 schnell** (imagens), **Wan 2.2 TI2V 5B** (animação), **Kokoro** (voz pt-BR), **faster-whisper** (tempo das palavras), **FFmpeg** (edição).
 
-Esta primeira versão foi escrita e testada num servidor Linux **sem GPU**. Por isso:
+## Leia primeiro: o que está provado e o que ainda não está
 
-| Parte | Estado |
-|---|---|
-| Roteiro (cliente Ollama, JSON validado por Pydantic, retentativa por orçamento de palavras, memória da série) | Testado contra um Ollama **falso**. Nunca rodou com um modelo real. |
-| Cliente do ComfyUI (envio, acompanhamento, download, timeout, erros, cancelamento) e troca de prompt/seed por **título** de nó | Testado contra um ComfyUI **falso** que valida o workflow como o real. |
-| Workflow FLUX schnell e workflow Wan 2.2 | **Escritos de memória, nunca executados.** O app compara cada workflow com o seu ComfyUI (`/object_info`) antes de rodar e para com uma mensagem clara se algo não bater. |
-| Narração Kokoro pt-BR, normalização de números, alinhamento, legendas ASS/SRT, câmera, transições, mix, MP4 final | **Testado de verdade** (modelo real, FFmpeg real, ffprobe, checagem de pixels da legenda). |
-| Interface Streamlit | Teste automatizado de fluxo (gerar roteiro e aprovar). Nunca aberta num navegador com GPU. |
-| `setup.ps1` e `run.ps1` | **Não executados** (não havia Windows). Revisados à mão. Leia o que fazem antes de rodar. |
-| Chatterbox, Piper | Código escrito, **não testado**. |
-| Medição de VRAM e tempo | Implementada com `nvidia-smi`, nunca rodou com GPU. |
-| Wan 2.2 no seu hardware | **Sem medição ainda.** Os valores padrão em `config.yaml` são conservadores, mas são palpite. |
+Esta versão foi construída e testada num servidor Linux **sem GPU, sem Ollama e sem acesso ao seu Windows**. Por isso a lista honesta é esta:
 
-O teste de aceitação (gravidade por 5 segundos, 30 s) foi feito com roteiro e imagens de **fixture**, então ele prova a montagem, não a qualidade criativa. A qualidade real do roteiro e das imagens só aparece no seu PC.
+| Parte | Estado | Como foi verificado |
+|---|---|---|
+| Workflows FLUX e Wan 2.2 | **Validados** contra um ComfyUI 0.43.0 real | Gerados dos templates oficiais (`flux_schnell`, `video_wan2_2_5B_ti2v`) com as definições reais dos nós; o validador do ComfyUI os aceita e recusa um workflow quebrado (controle negativo). Veja `workflows/PROVENANCE.md`. **Não foram executados com os pesos na GPU.** |
+| Narração em português do Brasil | **Provada** | Voz Kokoro -> reconhecimento de fala (Whisper multilíngue offline) -> comparação com o texto: erro de palavras de 0 a 1,9% nas 3 vozes pt-BR (pf_dora 0%, pm_alex 1,9%, pm_santa 1,9%); o controle (mesma voz com fonemas de inglês) dá 59%. Fonemas conferidos (`dʒ` em "gravidade", `ɾ` em "por"). |
+| Preservação do roteiro | **Testada** | O texto de cada cena é um trecho exato do que você colou (divisão feita em código, não pelo LLM). Testes confirmam palavra por palavra, inclusive nas legendas do MP4. |
+| Edição: câmera, transições, legendas, SFX, mix, MP4 | **Testada** | FFmpeg real, ffprobe, checagem por pixel da legenda e do tempo. |
+| Botão único, modo supervisionado, regenerar cena, animação velha descartada | **Testados** | Com Ollama e ComfyUI **simulados** (mas o ComfyUI simulado usa as definições reais dos nós). |
+| **Ollama com modelo real** | **NÃO testado** | Sem acesso ao registro de modelos. A qualidade do JSON e dos prompts depende do modelo que você usar. |
+| **FLUX gerando imagem real** | **NÃO testado** | Sem GPU. |
+| **Wan 2.2 animando de verdade** | **NÃO testado** | Sem GPU. Tempo e VRAM são desconhecidos. |
+| `setup.ps1`, `run.ps1`, `real_test.ps1` | **NÃO executados** | Sem Windows. Revisados à mão (sintaxe, chaves, ASCII). |
+| Chatterbox, Piper | **NÃO testados** | Opcionais. |
+
+Não considere o programa "funcionando" antes de rodar `.\real_test.ps1` (abaixo) e ver as etapas passarem.
 
 ## Requisitos
 
-- Windows 10/11, NVIDIA com driver **570 ou mais novo** (RTX 50 / Blackwell), Python 3.10 a 3.12, FFmpeg completo (com libass), Ollama.
+- Windows 10/11 com NVIDIA RTX (testado em teoria para 5060 Ti 16 GB). Driver **580 ou mais novo** para o PyTorch cu130 que o README oficial do ComfyUI recomenda hoje (com driver 570 a 579, use cu128: `-TorchIndex https://download.pytorch.org/whl/cu128`).
+- Python 3.10 a 3.13 (3.12 recomendado), FFmpeg completo (com libass), Ollama.
 - Espaço: ~9 GB (modelo do Ollama) + ~17 GB (FLUX fp8) + ~16 GB (Wan, opcional) + ~0,4 GB (voz).
 - Sem Docker e sem WSL.
 
 ## Instalação
 
-Abra o PowerShell na pasta do projeto. Leia o `setup.ps1` antes: ele não sobrescreve nada que já existe e não instala nada globalmente.
+PowerShell na pasta do projeto. Leia o `setup.ps1` antes: ele não sobrescreve nada que já existe nem instala nada globalmente.
 
 ```powershell
-# básico: ambiente do app, voz Kokoro, .env
-.\setup.ps1
-
-# com ComfyUI novo em .\ComfyUI (ambiente próprio, PyTorch CUDA 12.8) e o modelo de imagem
+.\setup.ps1                                        # ambiente do app + voz Kokoro + .env
 .\setup.ps1 -InstallComfyUI -DownloadImageModel -PullOllamaModel
-
-# ou usando um ComfyUI que você já tem (não é alterado)
-.\setup.ps1 -ComfyUIPath D:\ComfyUI -DownloadImageModel
-
-# modelos do Wan 2.2 (opcional, para o modo completo)
-.\setup.ps1 -ComfyUIPath D:\ComfyUI -DownloadWanModels
+.\setup.ps1 -ComfyUIPath D:\ComfyUI -DownloadImageModel     # usa o seu ComfyUI, sem alterá-lo
+.\setup.ps1 -ComfyUIPath D:\ComfyUI -DownloadWanModels      # modelos do Wan (modo completo)
 ```
 
-O setup **verifica** se o PyTorch enxerga a GPU e se a build tem `sm_120`. Se disser que não, a geração de imagens não vai funcionar e a mensagem diz o que tentar. As URLs de download dos modelos não puderam ser conferidas daqui. Se alguma der 404, baixe o arquivo manualmente para a pasta indicada.
+Dica: o jeito mais simples de ter um ComfyUI funcionando em NVIDIA é o **Windows Portable** oficial (github.com/comfyanonymous/ComfyUI/releases). Extraia, rode uma vez e passe a pasta com `-ComfyUIPath`.
 
-Para iniciar tudo: `.\run.ps1` (abre Ollama, ComfyUI e a interface em http://localhost:8501).
+**Arquivos que começam com ponto** (`.env.example`, `.gitignore`) costumam sumir ao extrair ZIP ou subir para o GitHub. O projeto traz cópias sem ponto (`env.example`, `gitignore.template`) e o `setup.ps1` recria `.env`, `.env.example` e `.gitignore` se faltarem, sem sobrescrever os que existirem.
 
-## Primeiro uso, passo a passo
+Depois: `.\run.ps1` abre Ollama, ComfyUI e a interface em http://localhost:8501.
 
-1. Barra lateral → **Verificação do ambiente** → *Verificar agora*. Tudo verde antes de seguir.
-2. Escreva a hipótese, escolha duração, episódios, estilo, tom e voz. **Gerar roteiro**.
-3. Aba *Roteiro*: edite narração e prompts à vontade. **Editar e aprovar roteiro** libera as etapas seguintes.
-4. Aba *Imagens*: **Gerar imagens**. Cena ruim? **Regenerar** troca a semente e refaz só ela.
-5. (Modo completo) Aba *Animações*: marque as cenas, **Verificar workflow Wan**, **Gerar animações**.
-6. Aba *Vídeo final*: **Gerar vídeo final** (faz a narração que faltar). Baixe o MP4 e o SRT, ou abra a pasta.
+## Testes reais no seu PC (faça nesta ordem)
 
-O progresso é real: a barra conta cenas concluídas, e cada etapa mostra o passo atual e o log. Erros ficam visíveis por cena. Os projetos ficam em `projects/<id>/` e podem ser reabertos. Cópias dos vídeos vão para `outputs/<id>/`.
+```powershell
+.\real_test.ps1 -Steps ambiente,ollama,workflows,imagem,tts_pt    # 1) o essencial, poucos minutos
+.\real_test.ps1 -Steps mp4_30s                                      # 2) MP4 de 30 s completo, sem animação
+.\real_test.ps1 -Steps wan                                          # 3) uma animação do Wan: mede tempo e VRAM
+.\real_test.ps1 -Steps tudo_um_botao                                # 4) roteiro curto -> MP4 com tudo (animação inclusa)
+```
 
-## Como funciona cada parte
+Cada etapa diz PASSOU, FALHOU ou PULADO, com tempos, pico de VRAM e o que fazer. O resultado fica em `real_test_output\relatorio.md` (e um ZIP pequeno para me enviar). Os MP4, imagens e áudio gerados ficam na mesma pasta: **assista e ouça**, porque nenhum teste automático julga se a imagem ficou bonita.
 
-**Roteiro.** Duas chamadas ao Ollama com JSON schema: a "bíblia" da série (universo, personagens, paleta, cenário, luz, câmera, plano dos episódios) e depois cada episódio. O programa calcula um orçamento de cenas e palavras para a duração pedida e **pede de novo ao modelo** se o texto vier fora de ±20%. Números viram palavras por extenso (`textnorm.py`) para a voz ler bem e a legenda bater com a fala. Cada cena é marcada como *fato* ou *especulação*. Os episódios seguintes recebem o resumo dos anteriores, e todos os prompts de imagem recebem a bíblia visual.
+O que cada etapa realmente verifica: `ambiente` (FFmpeg com os filtros certos, GPU e se o ComfyUI está usando CUDA), `ollama` (modelo instalado, JSON válido e **texto do roteiro idêntico**), `workflows` (nós e modelos instalados), `imagem` (FLUX gera 768x1344 que não é imagem vazia, com VRAM), `tts_pt` (narração + conferência por Whisper), `mp4_30s` (pipeline inteira em modo rápido + ffprobe), `wan` (animação decodifica e tem movimento), `tudo_um_botao` (roteiro -> MP4 com animação).
 
-**Imagens.** Prompt da cena + aparência dos personagens presentes + universo + paleta + luz + câmera + sufixo do estilo. Não há garantia de consistência perfeita entre cenas: o que existe é prompt compartilhado e semente determinística. Referência por imagem (IP-Adapter etc.) **não** foi implementada, porque o FLUX schnell não tem uma opção estável para isso.
+Se algo falhar, envie o `enviar_este_relatorio.zip`.
 
-**Animação (modo completo).** Cena a cena, imagem → Wan 2.2 TI2V 5B via ComfyUI. Antes de carregar o Wan o app libera a VRAM do FLUX (`/free`). Mede tempo e pico de VRAM por cena. Cenas sem animação seguem com zoom/pan. Se o workflow do Wan não bater com seu ComfyUI, só essa etapa falha e o modo rápido continua funcionando.
+## Uso
 
-**Narração e sincronia.** A duração de cada cena é a duração real da voz + respiro. Se o episódio passar de 5% do alvo, o app refaz a voz até 1,15x. As palavras vêm do Whisper (modelo multilíngue `small`), alinhadas ao texto do roteiro. Se o Whisper não estiver disponível, usa distribuição proporcional dentro da fala da cena (a duração dela é exata) e avisa no log.
+1. Abra a interface (`.\run.ps1`). Barra lateral -> *Verificação do ambiente* -> *Verificar agora*.
+2. Escolha **Colar meu roteiro** (preservado palavra por palavra) ou **Criar roteiro a partir de uma ideia**.
+3. Escolha estilo visual (cinematográfico, 3D, cartoon, documental, anime, terror sombrio, POV, ilustração ou o seu próprio), gênero (ou automático), tom, voz, **modo** e **animação**.
+4. **Gerar vídeo completo.** Veja a etapa, o passo, o progresso real e os logs.
 
-**Montagem.** Zoom/pan com easing (FFmpeg `zoompan`), transição `fade` de 0,18 s (`xfade`) sem alterar a duração total, legenda ASS com destaque palavra a palavra queimada no vídeo, SFX procedurais suaves e trilha opcional com ducking, loudnorm para -14 LUFS, H.264 + AAC, 1080x1920, 30 fps. Depois de exportar, o app roda o **ffprobe** e checa codec, resolução, fps, duração, sincronia áudio/vídeo, volume e decodificação completa. O resultado aparece na aba final.
+**Marcadores no roteiro** (não são narrados): `---` ou `Parte 2` / `Episódio 3: Título` começam um novo episódio; `[direção entre colchetes numa linha só]` vira dica visual da próxima cena. Exemplos de vários gêneros em `examples\`.
 
-## Ajustes importantes (`config.yaml`)
+**Modo automático**: faz todas as etapas sem parar. **Modo supervisionado**: pausa depois do plano, das imagens e das animações; você revisa, regenera o que quiser, aprova e clica de novo em *Gerar vídeo completo* (ele continua de onde parou e não refaz o que já está pronto).
 
-- `ollama.model`: troque o modelo à vontade. Se ele tiver "thinking" (ex.: Qwen3), use `ollama.think: false`.
-- `image.width/height`: 768x1344. Se faltar VRAM, baixe para 576x1024.
-- `animation.length`: precisa ser 4n+1. Comece pequeno e meça.
-- `render.encoder: h264_nvenc` acelera o export final usando a GPU.
-- `render.music_file`: trilha livre de direitos (o app não baixa música).
-- `subtitles.*`: fonte, tamanho, cores e posição.
+**Regenerar uma cena**: troca a semente e refaz só ela. Regenerar a imagem **descarta a animação antiga** daquela cena; se a animação é de uma imagem diferente da atual, o editor ignora e avisa no log.
 
-## Workflows do ComfyUI
+**Editar texto**: a narração fica travada. Para mudar uma palavra, marque *Permitir editar o texto da narração*; a cena fica marcada como editada.
 
-Os workflows ficam em `workflows/` no formato **API JSON**, com um arquivo `*.mapping.json` ao lado. O mapeamento aponta para os nós pelo **título** (`WIF Positive Prompt` etc.), nunca por ID, então você pode trocar o workflow sem mexer no código. Veja `workflows/README.md` para exportar o seu e mapear.
+## Como funciona
+
+- **Divisão em cenas (código, sem LLM).** Frases são agrupadas em cenas de 3 a 7,5 s de fala, respeitando parágrafos, abreviações e frases longas. Depois a divisão é conferida palavra por palavra contra o seu roteiro; se divergir, o programa para.
+- **Interpretação (Ollama).** Uma chamada deduz gênero, tom, personagens (com aparência fixa), cenários, paleta, luz e estilo. Outras chamadas, em lotes de 6 cenas, devolvem **só o visual** de cada trecho (prompt de imagem, movimento, câmera, efeito sonoro). O modelo não pode inventar personagem nem cenário fora da bíblia e **nunca devolve nem altera a narração**; se errar, o programa pede de novo com o motivo.
+- **Consistência.** Todas as cenas reutilizam a mesma bíblia visual: aparência exata de cada personagem presente, descrição do cenário, paleta, luz e câmera. **Não há garantia de consistência perfeita** (o FLUX schnell não tem referência de personagem estável). Opcional: `consistency.share_seed_by_location` e o experimental `consistency.chain_img2img`, que gera a cena a partir da imagem da cena anterior quando cenário e personagem são os mesmos.
+- **Imagens.** FLUX.1 schnell fp8 via ComfyUI, 768x1344. Libera a VRAM entre etapas (`/free`).
+- **Narração.** Kokoro com fonemas pt-BR (espeak-ng embutido). Só vozes pt-BR são aceitas (`pf_dora`, `pm_alex`, `pm_santa`); voz inglesa daria sotaque estrangeiro. Números, moeda, ordinais, %, unidades e horas viram palavras **só na fala**; a legenda mostra o seu texto original.
+- **Sincronia.** A duração de cada cena é a da voz + respiro. As palavras vêm do Whisper (multilíngue, CPU), alinhadas ao seu texto. Sem Whisper, divide proporcionalmente dentro da fala da cena e avisa.
+- **Animação (modo completo).** Cada imagem vira vídeo com o Wan 2.2 TI2V 5B, com tamanho que acompanha a narração (4n+1 quadros, entre `min_length` e `max_length`). Se a cena for mais longa que a animação, a edição desacelera até 1,5x e termina com zoom lento na última imagem, em vez de congelar.
+- **Efeitos e trilha.** Efeitos sintetizados (whoosh, impact, boom, rumble, riser, heartbeat, wind, drone), escolhidos pelo modelo conforme a ação do texto; o colchão sonoro discreto muda com o tom. Para sons reais, coloque arquivos CC0 em `assets\sfx\`. Trilha própria: `render.music_file`.
+- **Edição.** Zoom/pan com easing, transição `fade` de 0,18 s, legenda ASS com destaque palavra a palavra, loudnorm -14 LUFS, H.264 + AAC, 1080x1920, 30 fps. O ffprobe confere o arquivo no fim e o resultado aparece na aba final.
+
+## Otimização para RTX 5060 Ti 16 GB / 64 GB RAM / i7-14700KF
+
+- Uma etapa de GPU por vez: Ollama descarrega o modelo ao terminar o roteiro; o ComfyUI libera a VRAM antes do Wan e depois dele.
+- Whisper e Kokoro rodam na **CPU** (poupa VRAM e dispensa CUDA extra). O export H.264 usa a CPU; `render.encoder: h264_nvenc` usa a GPU se preferir.
+- Modelos escolhidos para caber em 16 GB: FLUX schnell **fp8**, Wan 2.2 **5B fp16**, Qwen2.5 14B quantizado no Ollama.
+- `animation.max_length` começa em 73 quadros (~3 s). Suba depois de medir o pico de VRAM no relatório.
+- 64 GB de RAM deixam o ComfyUI descarregar modelos para a memória em vez de recarregar do disco.
 
 ## Licenças (confira antes de publicar)
 
-Não consegui verificar as páginas dos modelos daqui. Isto é o que eu sei, **confirme nos cards oficiais**:
+Não consegui abrir as páginas dos modelos daqui. Isto é o que eu sei; **confirme nos cards oficiais**.
 
 | Componente | Licença conhecida | Observação |
 |---|---|---|
-| FLUX.1 [schnell] | Apache-2.0 | Uso comercial permitido. O FLUX.1 [dev] NÃO é igual: não use no lugar sem ler a licença. |
+| FLUX.1 [schnell] | Apache-2.0 | Uso comercial permitido. O FLUX.1 [dev] NÃO é igual; não o use no lugar sem ler a licença. |
 | Wan 2.2 TI2V 5B | Apache-2.0 | Confirme no repositório do modelo. |
-| Kokoro-82M | Apache-2.0 | Voz padrão do projeto. |
-| Qwen2.5-14B | Apache-2.0 | Alguns tamanhos da família têm outra licença. Gemma tem termos próprios com restrições de uso. |
+| Kokoro-82M | Apache-2.0 | Voz padrão. |
+| Qwen2.5-14B | Apache-2.0 | Alguns tamanhos da família têm outra licença. Gemma tem termos próprios. |
 | Whisper / faster-whisper | MIT | |
-| Chatterbox | MIT (código) | O áudio sai com marca d'água inaudível. Só use voz de referência que você tem direito de usar. |
+| Chatterbox | MIT (código) | Áudio com marca d'água inaudível; só use voz de referência que você tem direito de usar. |
 | Piper | Varia | O Piper atual é GPL-3.0 e cada voz tem licença própria. |
 | ComfyUI | GPL-3.0 | Roda como processo separado. |
 
-Para Instagram, vídeos com imagens realistas geradas por IA costumam exigir a marcação de conteúdo de IA na publicação. Este programa **não publica nada** sozinho.
+Vídeos com imagens realistas geradas por IA costumam exigir a marcação de conteúdo de IA ao publicar. Este programa **não publica nada** sozinho.
+
+## Workflows
+
+Gerados por `scripts\build_workflows.py` a partir dos templates oficiais e das definições reais do **seu** ComfyUI (rode de novo se atualizar o ComfyUI e algo quebrar: `python scripts\build_workflows.py --comfy http://127.0.0.1:8188`). Mapeamento por título de nó em `*.mapping.json`. Detalhes em `workflows\README.md`.
 
 ## Chatterbox e Piper (opcionais, sem teste)
 
-**Kokoro** é o padrão porque roda leve em CPU, tem vozes pt-BR e instala dentro do ambiente do app. O **Chatterbox Multilingual** exige PyTorch com CUDA e deve ficar num ambiente **separado**:
-
-```powershell
-py -3.11 -m venv chatterbox-env
-.\chatterbox-env\Scripts\pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-.\chatterbox-env\Scripts\pip install chatterbox-tts
-```
-
-Depois, em `config.yaml`: `tts.backend: chatterbox` e `tts.chatterbox.python: <caminho>\chatterbox-env\Scripts\python.exe`. O app chama `scripts/chatterbox_worker.py` nesse Python. Para **Piper**: `tts.backend: piper`, aponte `tts.piper.model` para um `.onnx` pt-BR.
+Kokoro é o padrão. O **Chatterbox Multilingual** exige PyTorch com CUDA e deve ficar num ambiente separado (`py -3.11 -m venv chatterbox-env`, instale `torch` com o mesmo índice do ComfyUI e `chatterbox-tts`). Depois `tts.backend: chatterbox` e `tts.chatterbox.python: <caminho>\chatterbox-env\Scripts\python.exe`. Para **Piper**: `tts.backend: piper` e `tts.piper.model` apontando para um `.onnx` pt-BR.
 
 ## Estrutura
 
 ```
 app.py                  interface Streamlit
 config.yaml, .env       configuração
-setup.ps1, run.ps1      instalação e execução (Windows)
-src/wifstudio/          roteiro, ComfyUI, TTS, alinhamento, legendas, render, pipeline, jobs
-workflows/              workflows API JSON + mapeamento por título
-models/                 voz Kokoro (e Piper, se usar)
-projects/               um projeto por pasta (retomável)
-outputs/                cópias dos MP4/SRT finais
-tests/                  testes (servidores falsos + FFmpeg e Kokoro reais)
+setup.ps1, run.ps1      instalação e execução
+real_test.ps1           testes REAIS no seu PC (relatório)
+src/wifstudio/          script, planner, comfy, ui2api, tts, align, subs, sfx, render, pipeline, jobs
+workflows/              workflows API JSON (dos templates oficiais) + mapeamento por título
+scripts/                build_workflows.py, real_check.py, chatterbox_worker.py
+examples/               roteiros de exemplo de vários gêneros
+assets/sfx/             seus efeitos sonoros (opcional)
+models/                 voz Kokoro
+projects/, outputs/     projetos (retomáveis) e MP4/SRT finais
+tests/                  testes automatizados
 ```
 
-## Testes
+## Testes automatizados (no desenvolvimento)
 
 ```powershell
 .\.venv\Scripts\python -m pytest tests -q
 ```
 
-Os testes de ponta a ponta precisam dos modelos do Kokoro (`models/kokoro/`). Ollama e ComfyUI são simulados em `tests/fake_servers.py`.
+Precisam dos modelos do Kokoro em `models\kokoro\`. Os testes de reconhecimento de fala usam um modelo ASR opcional (`WIF_TEST_ASR_DIR`) e os de validação contra ComfyUI real usam `WIF_REAL_COMFY_URL`; sem eles, esses testes são pulados.
 
 ## Problemas comuns
 
-- **"ComfyUI inacessível"**: rode `.\run.ps1` ou abra o ComfyUI e confira o host no `.env`.
-- **"O workflow ... não é compatível"**: a mensagem lista o nó ou o arquivo de modelo que falta. Ajuste o nome do arquivo no JSON do workflow ou instale o modelo.
-- **Falta de VRAM (CUDA out of memory)**: reduza `image.width/height`, feche outros programas, mantenha `comfyui.free_memory_between_stages: true`.
-- **Legenda com fonte errada**: coloque uma fonte instalada em `subtitles.font`.
-- **Whisper não baixa**: o app segue com alinhamento proporcional e avisa. Rode uma vez com internet liberada para baixar o modelo.
+- **"ComfyUI inacessível"**: `.\run.ps1`, ou abra o ComfyUI e confira `COMFYUI_HOST` no `.env`.
+- **"O workflow ... não é compatível"**: a mensagem lista o nó ou o arquivo de modelo que falta. Instale o modelo ou rode `scripts\build_workflows.py`.
+- **CUDA out of memory**: reduza `image.width/height` (576x1024) ou `animation.max_length`; feche outros programas.
+- **Voz estrangeira/sotaque**: o app recusa vozes que não sejam pt-BR; escolha `pf_dora`, `pm_alex` ou `pm_santa`.
+- **Legenda com fonte errada**: use uma fonte instalada em `subtitles.font`.
+- **Whisper não baixa**: o app segue com alinhamento proporcional e avisa. Rode uma vez com internet para baixar o modelo.

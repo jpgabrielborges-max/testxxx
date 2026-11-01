@@ -65,11 +65,29 @@ def render_scene_clip(src: Path, out: Path, duration: float, camera: str, cfg, i
         vf = _camera_filter(camera, frames, w, h, fps, r.get("camera_zoom", 0.16))
         run_ffmpeg(["-i", str(src), "-vf", vf, "-frames:v", str(frames), *enc, str(out)], cwd, log)
     else:
+        # Animação de IA (~2-3 s). Se a cena é mais longa: desacelera até 1,5x e, no que faltar, segue com a ÚLTIMA imagem da
+        # animação em zoom lento (em vez de congelar o quadro, que parece travamento).
         src_dur = media_duration(src)
         stretch = min(duration / max(src_dur, 0.1), 1.5) if src_dur < duration else 1.0
+        anim_len = min(duration, src_dur * stretch)
+        base = out.with_name(out.stem + "_anim.mp4")
         vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},fps={fps},"
-              f"setpts={stretch:.4f}*PTS,tpad=stop_mode=clone:stop_duration={duration:.3f},format=yuv420p")
-        run_ffmpeg(["-i", str(src), "-vf", vf, "-frames:v", str(frames), *enc, str(out)], cwd, log)
+              f"setpts={stretch:.4f}*PTS,format=yuv420p")
+        run_ffmpeg(["-i", str(src), "-vf", vf, "-t", f"{anim_len:.3f}", *enc, str(base)], cwd, log)
+        remain = duration - anim_len
+        if remain < 0.12:
+            base.replace(out)
+        else:
+            last = out.with_name(out.stem + "_last.png")
+            run_ffmpeg(["-sseof", "-0.2", "-i", str(base), "-frames:v", "1", "-update", "1", str(last)], cwd, log)
+            tail = out.with_name(out.stem + "_tail.mp4")
+            tf = math.ceil(remain * fps)
+            vf2 = _camera_filter("zoom_in", tf, w, h, fps, 0.07)
+            run_ffmpeg(["-i", str(last), "-vf", vf2, "-frames:v", str(tf), *enc, str(tail)], cwd, log)
+            run_ffmpeg(["-i", str(base), "-i", str(tail), "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]",
+                        "-map", "[v]", "-frames:v", str(frames), *enc, str(out)], cwd, log)
+            for tmp in (base, last, tail):
+                tmp.unlink(missing_ok=True)
     return out
 
 

@@ -51,11 +51,41 @@ def gravity_episode(overlong: bool = False) -> dict:
 def series_plan(n_episodes: int) -> dict:
     return {
         "series_title": "Sem Gravidade", "universe": "realistic modern Earth, everyday locations",
-        "characters": [], "palette": "teal and warm amber", "locations": ["city street", "kitchen", "low orbit"],
+        "characters": [], "palette": "teal and warm amber", "locations": [{"name": "city street", "description": "quiet city street at dawn"}, {"name": "kitchen", "description": "sunlit home kitchen"},
+                                                                    {"name": "low orbit", "description": "view of Earth from low orbit"}],
         "lighting": "soft golden hour with strong rim light", "camera_style": "35mm cinematic, shallow depth of field",
         "episodes": [{"number": i, "title": f"Episódio {i}", "premise": "A gravidade desaparece e as consequências crescem.",
                       "ending_hint": "termina com uma pergunta que o próximo episódio responde"} for i in range(1, n_episodes + 1)],
     }
+
+
+def script_analysis(n_eps: int) -> dict:
+    return {
+        "series_title": "Última Rua", "genre": "apocalipse zumbi", "tone": "sombrio e tenso",
+        "summary": "Um sobrevivente tenta atravessar a cidade tomada por infectados.",
+        "universe": "abandoned coastal city after an outbreak, overcast mornings", "palette": "desaturated teal, rust and ash grey",
+        "characters": [{"name": "Rafa", "appearance": "30-year-old man, short black hair, stubble, worn green jacket, backpack"},
+                       {"name": "Bidu", "appearance": "small brown mixed-breed dog with white chest and a red collar"}],
+        "locations": [{"name": "Avenida deserta", "description": "wide empty avenue with abandoned cars and broken traffic lights"},
+                      {"name": "Mercado", "description": "dim supermarket with fallen shelves and flickering lights"}],
+        "lighting": "low overcast light with rim highlights", "camera_style": "handheld 35mm, shallow depth of field",
+        "style_notes": "grain, muted colors",
+        "episodes": [{"number": i, "title": f"Parte {i}", "summary": f"Resumo do episódio {i}.", "ending_hint": "retoma na próxima parte"}
+                     for i in range(1, n_eps + 1)],
+    }
+
+
+def scene_visuals(payload: list[dict], characters: list[str], locations: list[str], wrong_indices: bool = False) -> dict:
+    cams = ["zoom_in", "pan_right", "zoom_out", "pan_left", "pan_up", "pan_down"]
+    sfxs = ["none", "whoosh", "none", "heartbeat", "none", "wind"]
+    out = []
+    for k, p in enumerate(payload):
+        out.append({"index": p["index"] + (100 if wrong_indices else 0),
+                    "image_prompt": f"Cinematic wide shot illustrating: {p['text'][:70]}. Moody light, detailed environment, strong depth",
+                    "animation_prompt": "slow subtle motion, drifting dust", "camera_move": cams[k % 6], "sfx": sfxs[k % 6],
+                    "fact_type": "ficcao", "characters": characters[:1] if k % 2 == 0 else characters[:2],
+                    "location": locations[0] if locations and k < 3 else (locations[-1] if locations else "")})
+    return {"scenes": out}
 
 
 class _Quiet(BaseHTTPRequestHandler):
@@ -78,6 +108,9 @@ class FakeOllama:
     def __init__(self, first_episode_overlong: bool = False, model: str = "qwen2.5:14b"):
         self.first_overlong = first_episode_overlong
         self.model = model
+        self.wrong_indices_first = False
+        self.visual_calls = 0
+        self.analysis_calls = 0
         self.episode_calls = 0
         self.requests: list[dict] = []
         self.unloaded = False
@@ -100,6 +133,19 @@ class FakeOllama:
                     if title == "SeriesPlan":
                         n = int(re.search(r"Número de episódios: (\d+)", body["messages"][1]["content"]).group(1))
                         return self._json({"message": {"content": json.dumps(series_plan(n))}})
+                    if title == "ScriptAnalysis":
+                        outer.analysis_calls += 1
+                        n = int(re.search(r"exatamente (\d+) item", body["messages"][1]["content"]).group(1))
+                        return self._json({"message": {"content": json.dumps(script_analysis(n))}})
+                    if title == "SceneVisualBatch":
+                        import ast
+                        outer.visual_calls += 1
+                        msg = body["messages"][1]["content"]
+                        payload = json.loads(msg.strip().splitlines()[-1])
+                        chars = ast.literal_eval(re.search(r"nomes EXATOS, ou lista vazia\): (\[.*?\])", msg).group(1))
+                        locs = ast.literal_eval(re.search(r"use o nome EXATO, ou vazio\): (\[.*?\])", msg).group(1))
+                        wrong = outer.wrong_indices_first and outer.visual_calls == 1
+                        return self._json({"message": {"content": json.dumps(scene_visuals(payload, chars, locs, wrong))}})
                     if title == "EpisodeDraft":
                         outer.episode_calls += 1
                         over = outer.first_overlong and outer.episode_calls == 1
@@ -115,24 +161,8 @@ class FakeOllama:
         self.server.shutdown()
 
 
-OBJECT_INFO = {
-    "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["flux1-schnell-fp8.safetensors"], {}]}}},
-    "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}], "clip": ["CLIP"]}}},
-    "EmptySD3LatentImage": {"input": {"required": {"width": ["INT", {}], "height": ["INT", {}], "batch_size": ["INT", {}]}}},
-    "KSampler": {"input": {"required": {"seed": ["INT", {}], "steps": ["INT", {}], "sampler_name": [["euler", "uni_pc"], {}],
-                                         "scheduler": [["simple", "normal"], {}]}}},
-    "VAEDecode": {"input": {"required": {}}},
-    "SaveImage": {"input": {"required": {"filename_prefix": ["STRING", {}]}}},
-    "UNETLoader": {"input": {"required": {"unet_name": [["wan2.2_ti2v_5B_fp16.safetensors"], {}], "weight_dtype": [["default", "fp8_e4m3fn"], {}]}}},
-    "CLIPLoader": {"input": {"required": {"clip_name": [["umt5_xxl_fp8_e4m3fn_scaled.safetensors"], {}], "type": [["wan", "flux"], {}],
-                                           "device": [["default", "cpu"], {}]}}},
-    "VAELoader": {"input": {"required": {"vae_name": [["wan2.2_vae.safetensors"], {}]}}},
-    "ModelSamplingSD3": {"input": {"required": {}}},
-    "LoadImage": {"input": {"required": {"image": [["example.png"], {}]}}},
-    "Wan22ImageToVideoLatent": {"input": {"required": {}}},
-    "CreateVideo": {"input": {"required": {}}},
-    "SaveVideo": {"input": {"required": {"filename_prefix": ["STRING", {}]}}},
-}
+_FIX = Path(__file__).parent / "fixtures" / "object_info_comfyui_0.43.0.json"
+OBJECT_INFO = {k: v for k, v in json.loads(_FIX.read_text(encoding="utf-8")).items() if not k.startswith("_")}  # nós REAIS do ComfyUI 0.43.0
 
 
 class FakeComfy:

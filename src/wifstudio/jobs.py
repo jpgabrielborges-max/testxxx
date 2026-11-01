@@ -12,11 +12,19 @@ class Cancelled(Exception):
     pass
 
 
+class Paused(Exception):
+    """Pausa planejada (modo supervisionado): o trabalho até aqui está salvo e o usuário precisa revisar e aprovar."""
+
+
 @dataclass
 class JobState:
     name: str
-    status: str = "running"  # running | done | error | cancelled
+    status: str = "running"  # running | done | error | cancelled | paused
     step: str = ""
+    stage: str = ""
+    stage_index: int = 0
+    stage_count: int = 0
+    message: str = ""
     total: int = 0
     done: int = 0
     error: Optional[str] = None
@@ -46,6 +54,15 @@ class JobContext:
     def plan(self, total: int) -> None:
         self.state.total = total
         self.state.done = 0
+
+    def begin_stage(self, index: int, count: int, label: str) -> None:
+        self.state.stage, self.state.stage_index, self.state.stage_count = label, index, count
+        self.state.total = self.state.done = 0
+        self.log(f"=== Etapa {index}/{count}: {label} ===")
+
+    def pause(self, message: str) -> None:
+        self.state.message = message
+        raise Paused(message)
 
     def step(self, label: str) -> None:
         self.state.step = label
@@ -91,6 +108,9 @@ class JobRunner:
                     fn(ctx)
                     state.status = "done"
                     ctx.log(f"Concluído: {name}")
+                except Paused as exc:
+                    state.status = "paused"
+                    ctx.log(f"Pausado para revisão: {exc}")
                 except Cancelled:
                     state.status = "cancelled"
                     ctx.log("Cancelado pelo usuário")

@@ -1,5 +1,5 @@
 {
-  "description": "FLUX.1 schnell (checkpoint fp8 unico) via CheckpointLoaderSimple. Mapeado por TITULO do no.",
+  "description": "FLUX.1 schnell (checkpoint fp8 unico) via CheckpointLoaderSimple. Gerado do template oficial flux_schnell. Mapeado por TITULO do no.",
   "required": ["positive_prompt", "seed", "width", "height", "filename_prefix"],
   "roles": {
     "positive_prompt": {"title": "WIF Positive Prompt", "input": "text"},
