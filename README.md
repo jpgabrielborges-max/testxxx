@@ -20,7 +20,8 @@ Esta versão foi construída e testada num servidor Linux **sem GPU, sem Ollama 
 | **Ollama com modelo real** | **NÃO testado** | Sem acesso ao registro de modelos. A qualidade do JSON e dos prompts depende do modelo que você usar. |
 | **FLUX gerando imagem real** | **NÃO testado** | Sem GPU. |
 | **Wan 2.2 animando de verdade** | **NÃO testado** | Sem GPU. Tempo e VRAM são desconhecidos. |
-| `setup.ps1`, `run.ps1`, `real_test.ps1` | **NÃO executados** | Sem Windows. Revisados à mão (sintaxe, chaves, ASCII). |
+| `setup.ps1`, `run.ps1`, `real_test.ps1` | **NÃO executados aqui** | Sem Windows. Revisados à mão. Na sua máquina o `setup`, o Ollama e o FLUX já funcionaram (relato do teste real). |
+| Salvamento de arquivos no Windows (v0.2.1) | **Testado só por simulação** | Os bloqueios do Windows são simulados (os.replace falhando com PermissionError); threads e processos são testados de verdade. O comportamento com o seu antivírus/OneDrive só aparece rodando `diagnose_storage.py` aí. |
 | Chatterbox, Piper | **NÃO testados** | Opcionais. |
 
 Não considere o programa "funcionando" antes de rodar `.\real_test.ps1` (abaixo) e ver as etapas passarem.
@@ -49,10 +50,35 @@ Dica: o jeito mais simples de ter um ComfyUI funcionando em NVIDIA é o **Window
 
 Depois: `.\run.ps1` abre Ollama, ComfyUI e a interface em http://localhost:8501.
 
+## Pastas de dados e o erro "Acesso negado" no Windows
+
+Se aparecer `PermissionError: [WinError 5] Acesso negado: project.json.tmp -> project.json` (ou WinError 32), outro programa estava com o arquivo aberto naquele instante: antivírus (Windows Defender examina cada arquivo recém-gravado), **OneDrive** (a Área de Trabalho costuma ser sincronizada) ou o indexador do Windows. O app grava o `project.json` dezenas de vezes por minuto, então mais cedo ou mais tarde bate num bloqueio.
+
+O que o app faz agora (v0.2.1): grava em um temporário de nome **único** ao lado do arquivo, força para o disco e troca por `os.replace` com **retentativas e espera crescente** (até ~12 s). Se ainda assim não der, o `project.json` anterior fica intacto, a versão nova é guardada em `project.json.unsaved` e a mensagem diz o que fazer. Há uma cópia `project.json.bak`, usada se o principal ficar ilegível. Threads e processos diferentes não se atropelam (trava de thread + trava de arquivo), e a interface altera o projeto sempre por leitura-modificação-gravação sob trava, em vez de salvar uma cópia velha. Log, JSONs, imagens baixadas, WAV e MP4 também usam escrita segura; se o MP4 final estiver aberto no seu player, o vídeo novo sai com sufixo de hora em vez de falhar.
+
+**Mudar as pastas sem mover nada** (o `.venv`, o ComfyUI e os modelos continuam onde estão). No `.env`:
+
+```
+WIF_PROJECTS_DIR=C:\WIF\projects
+WIF_OUTPUTS_DIR=C:\WIF\outputs
+WIF_TEST_OUTPUT_DIR=C:\WIF\testes
+```
+
+Aceita `~` e `%USERPROFILE%`. Vazio = pastas padrão dentro do projeto. Só para uma execução do teste: `.\real_test.ps1 -OutputDir C:\WIF\testes -ProjectsDir C:\WIF\projects`. Projetos que já estão na pasta antiga continuam lá: copie as pastas de `projects\` para a nova se quiser abri-los.
+
+**Teste a sua pasta** (poucos segundos; martela com gravações e leituras simultâneas e conta os bloqueios):
+
+```powershell
+.\.venv\Scripts\python scripts\diagnose_storage.py                 # pastas configuradas
+.\.venv\Scripts\python scripts\diagnose_storage.py C:\WIF D:\outra  # pastas específicas
+```
+
+Se mostrar muitas retentativas, mude a pasta para fora da Área de Trabalho/OneDrive ou adicione-a às exclusões do Windows Defender.
+
 ## Testes reais no seu PC (faça nesta ordem)
 
 ```powershell
-.\real_test.ps1 -Steps ambiente,ollama,workflows,imagem,tts_pt    # 1) o essencial, poucos minutos
+.\real_test.ps1 -Steps armazenamento,ambiente,ollama,workflows,imagem,tts_pt    # 1) o essencial, poucos minutos
 .\real_test.ps1 -Steps mp4_30s                                      # 2) MP4 de 30 s completo, sem animação
 .\real_test.ps1 -Steps wan                                          # 3) uma animação do Wan: mede tempo e VRAM
 .\real_test.ps1 -Steps tudo_um_botao                                # 4) roteiro curto -> MP4 com tudo (animação inclusa)
@@ -60,7 +86,7 @@ Depois: `.\run.ps1` abre Ollama, ComfyUI e a interface em http://localhost:8501.
 
 Cada etapa diz PASSOU, FALHOU ou PULADO, com tempos, pico de VRAM e o que fazer. O resultado fica em `real_test_output\relatorio.md` (e um ZIP pequeno para me enviar). Os MP4, imagens e áudio gerados ficam na mesma pasta: **assista e ouça**, porque nenhum teste automático julga se a imagem ficou bonita.
 
-O que cada etapa realmente verifica: `ambiente` (FFmpeg com os filtros certos, GPU e se o ComfyUI está usando CUDA), `ollama` (modelo instalado, JSON válido e **texto do roteiro idêntico**), `workflows` (nós e modelos instalados), `imagem` (FLUX gera 768x1344 que não é imagem vazia, com VRAM), `tts_pt` (narração + conferência por Whisper), `mp4_30s` (pipeline inteira em modo rápido + ffprobe), `wan` (animação decodifica e tem movimento), `tudo_um_botao` (roteiro -> MP4 com animação).
+O que cada etapa realmente verifica: `armazenamento` (gravações simultâneas nas pastas de projetos, saídas e testes, contando bloqueios), `ambiente` (FFmpeg com os filtros certos, GPU e se o ComfyUI está usando CUDA), `ollama` (modelo instalado, JSON válido e **texto do roteiro idêntico**), `workflows` (nós e modelos instalados), `imagem` (FLUX gera 768x1344 que não é imagem vazia, com VRAM), `tts_pt` (narração + conferência por Whisper), `mp4_30s` (pipeline inteira em modo rápido + ffprobe), `wan` (animação decodifica e tem movimento), `tudo_um_botao` (roteiro -> MP4 com animação).
 
 Se algo falhar, envie o `enviar_este_relatorio.zip`.
 

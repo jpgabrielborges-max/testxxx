@@ -214,20 +214,24 @@ st.caption(f"{SRC_LABEL[s0.source]} · estilo {VISUAL_STYLES[s0.visual_style]} �
 
 with st.expander("Opções do projeto (valem a partir da próxima etapa)"):
     c1, c2, c3, c4 = st.columns(4)
-    new_review = c1.radio("Revisão", ["automatico", "supervisionado"], index=["automatico", "supervisionado"].index(s0.review_mode), key=f"rv_{pid}")
-    new_mode = c2.radio("Animação", ["rapido", "completo"], index=["rapido", "completo"].index(s0.mode), key=f"md_{pid}")
-    new_scope = c3.radio("Animar", ["todas", "marcadas"], index=["todas", "marcadas"].index(s0.animate_scope), key=f"sc_{pid}")
+    if busy:
+        st.caption("Bloqueado enquanto uma tarefa roda (evita a tela sobrescrever o que a geração está salvando).")
+    new_review = c1.radio("Revisão", ["automatico", "supervisionado"], index=["automatico", "supervisionado"].index(s0.review_mode), key=f"rv_{pid}", disabled=busy)
+    new_mode = c2.radio("Animação", ["rapido", "completo"], index=["rapido", "completo"].index(s0.mode), key=f"md_{pid}", disabled=busy)
+    new_scope = c3.radio("Animar", ["todas", "marcadas"], index=["todas", "marcadas"].index(s0.animate_scope), key=f"sc_{pid}", disabled=busy)
     vl = list(KOKORO_PT_VOICES)
-    new_voice = c4.selectbox("Voz", vl, index=vl.index(s0.voice) if s0.voice in vl else 0, key=f"vc_{pid}") if cfg.get("tts.backend", "kokoro") == "kokoro" else s0.voice
-    if (new_review, new_mode, new_scope, new_voice) != (s0.review_mode, s0.mode, s0.animate_scope, s0.voice):
-        voice_changed = new_voice != s0.voice
-        s0.review_mode, s0.mode, s0.animate_scope, s0.voice = new_review, new_mode, new_scope, new_voice
-        if voice_changed:  # voz nova: a narração antiga não vale mais
-            for e in proj.episodes:
-                for sc in e.scenes:
-                    sc.status["audio"] = sc.status["clip"] = "pending"
-        store.save(proj)
+    new_voice = c4.selectbox("Voz", vl, index=vl.index(s0.voice) if s0.voice in vl else 0, key=f"vc_{pid}", disabled=busy) if cfg.get("tts.backend", "kokoro") == "kokoro" else s0.voice
+    if not busy and (new_review, new_mode, new_scope, new_voice) != (s0.review_mode, s0.mode, s0.animate_scope, s0.voice):
+        def _apply_options(p):
+            voice_changed = new_voice != p.settings.voice
+            p.settings.review_mode, p.settings.mode, p.settings.animate_scope, p.settings.voice = new_review, new_mode, new_scope, new_voice
+            if voice_changed:  # voz nova: a narração antiga não vale mais
+                for e in p.episodes:
+                    for sc in e.scenes:
+                        sc.status["audio"] = sc.status["clip"] = "pending"
+        store.update(pid, _apply_options)
         st.toast("Opções salvas")
+        st.rerun()
 
 a, b, _ = st.columns([1.3, 1.3, 3])
 label = "🚀 Gerar vídeo completo" if not any(e.final_video for e in proj.episodes) else "🚀 Continuar / refazer o que faltar"
@@ -285,9 +289,11 @@ with tab_plan:
                 if allow_text:
                     patch["narration"] = st.session_state[f"n_{k}"]
                 edits[sc.id] = patch
-        apply_edits(proj, edits, store, allow_text_edit=allow_text)
-        if approve_clicked:
-            approve(proj, store)
+        def _save_plan(p):  # sob trava, em cima da versão mais recente do disco
+            apply_edits(p, edits, store, allow_text_edit=allow_text)
+            if approve_clicked:
+                approve(p, store)
+        store.update(pid, _save_plan)
         st.success("Plano salvo" + (" e aprovado." if approve_clicked else "."))
         st.rerun()
 
@@ -308,8 +314,9 @@ def scene_grid(kind: str, cols: int = 4):
                     if kind == "animation":
                         flag = st.checkbox("animar", value=sc.animate, key=f"anim_{pid}_{sc.id}", disabled=busy)
                         if flag != sc.animate:
-                            sc.animate = flag
-                            store.save(proj)
+                            def _set_animate(p, sid=sc.id, v=flag):
+                                p.scene(sid)[1].animate = v
+                            store.update(pid, _set_animate)
                     m = {k: v for k, v in sc.metrics.items() if k.startswith(kind)}
                     if m:
                         st.caption(" · ".join(f"{k.split('_', 1)[1]}: {v:g}" for k, v in m.items()))
@@ -329,8 +336,7 @@ with tab_img:
     if b.button("Refazer todas", disabled=busy or not proj.plan_approved):
         launch("Imagens (todas)", lambda p, ctx: studio.stage_images(p, ctx, force=True), pid)
     if c.button("✅ Aprovar imagens", disabled=busy):
-        proj.images_approved = True
-        store.save(proj)
+        store.update(pid, lambda p: setattr(p, "images_approved", True))
         st.rerun()
     if proj.images_approved:
         st.caption("Imagens aprovadas.")
@@ -351,8 +357,7 @@ with tab_anim:
         except Exception as exc:  # noqa: BLE001
             st.error(str(exc))
     if c.button("✅ Aprovar animações", disabled=busy):
-        proj.animations_approved = True
-        store.save(proj)
+        store.update(pid, lambda p: setattr(p, "animations_approved", True))
         st.rerun()
     scene_grid("animation")
 
